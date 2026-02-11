@@ -26,11 +26,9 @@ const publicPath = path.join(__dirname,'public');
 
 
 if (!apiKey) {
-    // Only log an error, don't exit. The server will serve apps without proxy functionality
-    console.error("Warning: GEMINI_API_KEY or API_KEY environment variable is not set! Proxy functionality will be disabled.");
-}
-else {
-  console.log("API KEY FOUND (proxy will use this)")
+    console.warn("GEMINI_API_KEY/API_KEY not set. Server will run; /api-proxy requests will return 503 until key is set.");
+} else {
+    console.log("API key configured (proxy will use it).");
 }
 
 // Limit body size to 50mb
@@ -69,6 +67,16 @@ app.use('/api-proxy', async (req, res, next) => {
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Goog-Api-Key');
         res.setHeader('Access-Control-Max-Age', '86400'); // Cache preflight response for 1 day
         return res.sendStatus(200);
+    }
+
+    // API 키 없이도 서버는 가동; 프록시 호출 시 안내 응답 반환
+    if (!apiKey) {
+        res.setHeader('Content-Type', 'application/json');
+        return res.status(503).json({
+            error: 'Proxy disabled',
+            message: 'GEMINI_API_KEY (or API_KEY) is not set. Set it in .env or environment to use the Gemini API proxy.',
+            code: 'PROXY_NO_API_KEY'
+        });
     }
 
     if (req.body) { // Only log body if it exists
@@ -246,8 +254,8 @@ app.use(express.static(staticPath));
 // Start the HTTP server
 const server = app.listen(port, () => {
     console.log(`Server listening on port ${port}`);
-    console.log(`HTTP proxy active on /api-proxy/**`);
-    console.log(`WebSocket proxy active on /api-proxy/**`);
+    console.log(`HTTP proxy: /api-proxy/** ${apiKey ? '(enabled)' : '(disabled — set GEMINI_API_KEY to enable)'}`);
+    console.log(`WebSocket proxy: /api-proxy/** ${apiKey ? '(enabled)' : '(disabled)'}`);
 });
 
 // Create WebSocket server and attach it to the HTTP server
@@ -259,7 +267,7 @@ server.on('upgrade', (request, socket, head) => {
 
     if (pathname.startsWith('/api-proxy/')) {
         if (!apiKey) {
-            console.error("WebSocket proxy: API key not configured. Closing connection.");
+            console.warn("WebSocket proxy: API key not set. Rejecting connection.");
             socket.destroy();
             return;
         }
